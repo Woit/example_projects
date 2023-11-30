@@ -1,0 +1,116 @@
+---
+colon:
+  severity: error
+
+line_length:
+  ignores_comments: true
+  warning: 260
+  error: 300
+
+type_body_length:
+  warning: 300
+  error: 500
+
+file_length:
+  warning: 800
+  error: 1000
+
+function_parameter_count:
+  warning: 20
+  error: 30
+
+function_body_length:
+  warning: 120
+  error: 150
+
+cyclomatic_complexity:
+  warning: 40
+  error: 50
+
+nesting:
+  type_level:
+    warning: 3
+    error: 6
+  function_level:
+    warning: 5
+    error: 10
+
+vertical_parameter_alignment:
+  severity: warning
+
+implicitly_unwrapped_optional:
+  severity: warning
+
+force_unwrapping:
+  severity: error
+
+vertical_whitespace:
+  severity: error
+
+force_try:
+  severity: error
+
+trailing_semicolon:
+  severity: error
+
+type_name:
+  min_length: 3
+  max_length: 60
+  error: 80
+
+identifier_name:
+  min_length: 3
+  max_length: 60
+  validates_start_with_lowercase: true
+  allowed_symbols: "_"
+  excluded:
+    - iv
+    - id
+    - ip
+    - on
+    - ui
+    - x
+    - y
+    - tz
+    - to
+    - db
+
+# Disable rules from the default enabled set.
+disabled_rules:
+  - trailing_whitespace
+  - implicit_getter
+  - redundant_string_enum_value
+  - switch_case_alignment
+
+# Enable rules not from the default set.
+opt_in_rules:
+  # - function_default_parameter_at_end
+  - empty_count
+  - indentation_width
+  # - index_at_zero
+  - legacy_constant
+  # - implicitly_unwrapped_optional
+  - force_unwrapping
+  # - no header
+  - file_header
+  # - for force unwrapping
+  - implicitly_unwrapped_optional
+  - vertical_parameter_alignment_on_call
+  - vertical_whitespace_between_cases
+  - vertical_whitespace_closing_braces
+  - vertical_whitespace_opening_braces
+
+# Acts as a whitelist, only the rules specified in this list will be enabled. Can not be specified alongside disabled_rules or opt_in_rules.
+only_rules:
+
+# This is an entirely separate list of rules that are only run by the analyze command. All analyzer rules are opt-in, so this is the only configurable rule list (there is no disabled/whitelist equivalent).
+analyzer_rules:
+  - unused_import
+  - unused_declaration
+
+unused_declaration:
+  include_public_and_open: true
+
+# paths to ignore during linting. Takes precedence over `included`.
+# excluded:
+#  - some_folder

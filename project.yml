@@ -1,0 +1,18 @@
+---
+name: example_projects
+
+settings:
+  DEVELOPMENT_TEAM: U6CKGHL5VR
+
+# options:
+#  postGenCommand: swiftgen
+
+packages:
+  ServiceTarget:
+    path: ServiceTarget
+  ServiceMonitor:
+    path: ServiceMonitor
+  AstroSearch:
+    path: AstroSearch
+
+parallelizeBuild: true
