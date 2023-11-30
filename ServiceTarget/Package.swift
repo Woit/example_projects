@@ -16,7 +16,8 @@ let package = Package(
             name: "ServiceTarget",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
-                .product(name: "NIO", package: "swift-nio")
+                .product(name: "NIO", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio")
             ]
         )
     ]

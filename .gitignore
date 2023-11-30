@@ -1,2 +1,4 @@
 /example_projects.xcodeproj
 .nvim
+Package.resolved
+buildServer.json
