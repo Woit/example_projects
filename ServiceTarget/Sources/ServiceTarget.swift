@@ -1,9 +1,5 @@
-// The Swift Programming Language
-// https://docs.swift.org/swift-book
+// Simple HTTP ping server
 //
-// Swift Argument Parser
-// https://swiftpackageindex.com/apple/swift-argument-parser/documentation
-
 import ArgumentParser
 import Foundation
 import NIO
@@ -11,9 +7,19 @@ import NIOHTTP1
 
 @main
 struct ServiceTarget: ParsableCommand {
-    mutating func run() throws {
-        let port = 8080
+    static let configuration = CommandConfiguration(
+        abstract: "A simple HTTP server which is responding 'ok' wiht random delay",
+        subcommands: [Start.self]
+    )
+}
 
+struct Start: ParsableCommand {
+    @Argument(help: "Server start")
+    private var port: Int = 8080
+
+    static let configuration = CommandConfiguration(abstract: "Start server with specific port")
+
+    mutating func run() throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
 
         defer {
