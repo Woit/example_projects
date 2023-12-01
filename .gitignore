@@ -2,3 +2,4 @@
 .nvim
 Package.resolved
 buildServer.json
+.swiftpm

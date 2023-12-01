@@ -17,6 +17,9 @@ struct Start: ParsableCommand {
     @Argument(help: "Server start")
     private var port: Int = 8080
 
+    @Option(name: .long, help: "Resource path. By default ping service binded on /ping")
+    private var path: String = "/path"
+
     static let configuration = CommandConfiguration(abstract: "Start server with specific port")
 
     mutating func run() throws {
@@ -25,20 +28,20 @@ struct Start: ParsableCommand {
         defer {
             try? group.syncShutdownGracefully()
         }
-
+        let pth = path
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
                 channel.pipeline.addHandler(ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)))
                     .flatMap { channel.pipeline.addHandler(HTTPResponseEncoder()) }
-                    .flatMap { channel.pipeline.addHandler(HTTPHandler()) }
+                    .flatMap { channel.pipeline.addHandler(HTTPHandler(path: pth)) }
             }
 
         let channel = try bootstrap.bind(host: "localhost", port: port)
             .wait()
 
-        print("Server started and listening on port \(port)")
+        print("Server started and listening at localhost:\(port)\(path)")
         try channel.closeFuture.wait()
         print("Server closed")
     }
@@ -50,6 +53,11 @@ let sec5: UInt32 = 5_000_000 // 5 sec
 final class HTTPHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
+    let path: String
+
+    init(path: String) {
+        self.path = path
+    }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let request = unwrapInboundIn(data)
@@ -61,10 +69,10 @@ final class HTTPHandler: ChannelInboundHandler {
             let head: HTTPResponseHead
             var buffer: NIOCore.ByteBuffer
 
-            if header.method == .GET, header.uri == "/ping" {
+            if header.method == .GET, header.uri == path {
                 head = HTTPResponseHead(version: header.version, status: .ok)
                 buffer = channel.allocator.buffer(capacity: 4)
-                buffer.writeString("ok")
+                buffer.writeString("OK")
                 usleep(UInt32.random(in: msec20 ... sec5))
             } else {
                 head = HTTPResponseHead(version: header.version, status: .forbidden)

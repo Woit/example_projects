@@ -5,6 +5,7 @@
 // https://swiftpackageindex.com/apple/swift-argument-parser/documentation
 
 import ArgumentParser
+import swift_polis
 
 @main
 struct AstroSearch: ParsableCommand {
