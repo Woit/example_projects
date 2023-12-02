@@ -2,55 +2,33 @@ import Foundation
 import NIO
 import NIOHTTP1
 
-enum ServerState {
-    case notReady
-    case ready
-}
-
 enum ServerError {
     case forbidden
     case parameterRequired(String)
     case notReady
+    case internalError
 }
 
 // - `updateDate` - returns the last update date of the data set
 // - `numberOfObservingFacilities` - returns the number of facilities in the current data set
 // - `search?name=xxx` - returns the UUIDs of all facilities with a name containing the search criteria.
 // - `location?uuid=UUID` - returns the longitude and latitude (as Double values) of a facility with a given UUID.
-enum Api: CaseIterable {
-    case updateDate
-    case numberOfObservingFacilities
-    case search(String)
-    case location(String)
-
-    var uri: String {
-        switch self {
-        case .updateDate: return "/api/updateDate"
-        case .numberOfObservingFacilities: return "/api/numberOfObservingFacilities"
-        case .search: return "/api/search"
-        case .location: return "/api/location"
-        }
-    }
-
-    static var allCases: [Api] {
-        [.updateDate, .numberOfObservingFacilities, .search(""), .location("")]
-    }
+private enum Api: String, CaseIterable, Codable {
+    case updateDate = "/api/updateDate"
+    case numberOfObservingFacilities = "/api/numberOfObservingFacilities"
+    case search = "/api/search"
+    case location = "/api/location"
 }
 
 final class Server {
     let port: Int
-    let dataPath: String
-    var handler = HTTPHandler()
-    var state: ServerState = .notReady {
-        didSet {
-            handler.state = state
-            print("state updated \(state)")
-        }
-    }
+    let database: DataBase
+    private var httpHandler: HTTPHandler
 
-    init(port: Int, dataPath: String) {
+    init(port: Int, database: DataBase) {
         self.port = port
-        self.dataPath = dataPath
+        self.database = database
+        httpHandler = HTTPHandler(database: database)
     }
 
     func run() throws {
@@ -60,14 +38,14 @@ final class Server {
             try? group.syncShutdownGracefully()
         }
 
-        let handler = handler
+        let httpHandler = httpHandler
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 256)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
                 channel.pipeline.addHandler(ByteToMessageHandler(HTTPRequestDecoder(leftOverBytesStrategy: .forwardBytes)))
                     .flatMap { channel.pipeline.addHandler(HTTPResponseEncoder()) }
-                    .flatMap { channel.pipeline.addHandler(handler) }
+                    .flatMap { channel.pipeline.addHandler(httpHandler) }
             }
 
         let channel = try bootstrap.bind(host: "localhost", port: port)
@@ -79,45 +57,83 @@ final class Server {
     }
 }
 
-final class HTTPHandler: ChannelInboundHandler {
+private final class HTTPHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
 
-    var state: ServerState = .notReady
+    weak var database: DataBase?
+
+    init(database: DataBase) {
+        self.database = database
+    }
 
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let channel = context.channel
-        if state != .ready {
+        guard let db = database else {
+            serverError(channel: channel, reason: .internalError)
+            return
+        }
+        if db.state != .ready {
             serverError(channel: channel, reason: .notReady)
+            return
         }
 
         let request = unwrapInboundIn(data)
         switch request {
         case let .head(header):
-            print(header.uri)
             guard header.method == .GET else {
                 serverError(channel: channel, reason: .forbidden)
                 return
             }
-
-            guard Api.allCases.map({ $0.uri }).contains(header.uri) else {
+            guard let components = URLComponents(string: header.uri) else {
+                serverError(channel: channel, reason: .internalError)
+                return
+            }
+            guard let api = Api(rawValue: components.path) else {
                 serverError(channel: channel, reason: .forbidden)
                 return
             }
 
-            let head: HTTPResponseHead
-            var buffer: NIOCore.ByteBuffer
+            let params = components.percentEncodedQueryItems?
+                .compactMap { $0.value != nil ? $0 : nil }
+                .reduce([String: String]()) { dict, item -> [String: String] in
+                    var dict = dict
+                    dict[item.name] = (item.value ?? "").removingPercentEncoding
+                    return dict
+                }
 
-            if header.method == .GET, header.uri == "api" {
-                head = HTTPResponseHead(version: header.version, status: .ok)
-                buffer = channel.allocator.buffer(capacity: 4)
-                buffer.writeString("OK")
-            } else {
-                head = HTTPResponseHead(version: header.version, status: .forbidden)
-                buffer = channel.allocator.buffer(capacity: 18)
-                buffer.writeString("Forbidden")
+            var buffer: NIOCore.ByteBuffer
+            switch api {
+            case .updateDate:
+                let msg = db.getLastUpdateTime()
+                buffer = channel.allocator.buffer(capacity: msg.count * 2)
+                buffer.writeString(msg)
+
+            case .numberOfObservingFacilities:
+                let msg = db.getNumFascilities()
+                buffer = channel.allocator.buffer(capacity: msg.count * 2)
+                buffer.writeString(msg)
+
+            case .search:
+                guard let params, let name = params["name"] else {
+                    serverError(channel: channel, reason: .parameterRequired("name"))
+                    return
+                }
+                let msg = db.getByName(name: name)
+                buffer = channel.allocator.buffer(capacity: msg.count * 2)
+                buffer.writeString(msg)
+
+            case .location:
+                guard let params, let uuid = params["uuid"] else {
+                    serverError(channel: channel, reason: .parameterRequired("uuid"))
+                    return
+                }
+                let msg = db.getLocationByUUID(UUID: uuid)
+                buffer = channel.allocator.buffer(capacity: msg.count * 2)
+                buffer.writeString(msg)
             }
 
+            let head = HTTPResponseHead(version: .http1_1, status: .ok)
             let part = HTTPServerResponsePart.head(head)
             _ = channel.write(part)
 
@@ -153,6 +169,11 @@ final class HTTPHandler: ChannelInboundHandler {
             head = HTTPResponseHead(version: .http1_1, status: .ok)
             buffer = channel.allocator.buffer(capacity: 84)
             buffer.writeString("Service not yet ready (data downloading...)")
+
+        case .internalError:
+            head = HTTPResponseHead(version: .http1_1, status: .internalServerError)
+            buffer = channel.allocator.buffer(capacity: 28)
+            buffer.writeString("Internal error")
         }
         let part = HTTPServerResponsePart.head(head)
         _ = channel.write(part)
@@ -169,4 +190,9 @@ final class HTTPHandler: ChannelInboundHandler {
     func channelReadComplete(context: ChannelHandlerContext) {
         context.flush()
     }
+}
+
+private struct APIRequest: Codable {
+    let api: Api
+    let params: [String: String]?
 }

@@ -26,12 +26,8 @@ struct Start: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Start server with specific port")
 
     mutating func run() throws {
-        let server = Server(port: port, dataPath: localPath)
-        let downloader = RemoteDownloader(fromRemote: remotePath, toLocal: localPath)
-        downloader.downloadIfNeeded {
-            print("Data downloaded")
-            server.state = .ready
-        }
+        let database = DataBase(remotePath: remotePath, localPath: localPath)
+        let server = Server(port: port, database: database)
         try server.run()
     }
 }
