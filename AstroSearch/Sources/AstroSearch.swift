@@ -2,7 +2,7 @@ import ArgumentParser
 import Foundation
 
 let DEFAULT_PORT = 8080
-let DEFAULT_DATA_PATH = "./polis"
+let DEFAULT_DATA_PATH = "."
 let DEFAULT_REMOTE_SOURCE = "http://test.polis.observer/polis"
 
 @main
