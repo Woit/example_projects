@@ -66,19 +66,11 @@ final class DataBase {
     }
 
     func getByName(name: String) throws -> String {
-        var result = [
-            "result": "ok",
-            "uuid": ""
-        ]
+        let items = polisFacilitiesDirectory?.observingFacilityReferences
+            .filter { $0.identity.name.lowercased().contains(name.lowercased()) }
+            .map { $0.identity.id }
 
-        if let item = polisFacilitiesDirectory?.observingFacilityReferences.first(where: { $0.identity.name == name }) {
-            result["uuid"] = item.identity.id.uuidString
-        } else {
-            result["result"] = "not_found"
-            result.removeValue(forKey: "uuid")
-        }
-
-        if let res = Utils.structToJsonStr(input: result) {
+        if let res = Utils.structToJsonStr(input: items) {
             return res
         } else {
             throw DatabaseError.dataEncodingError
@@ -157,7 +149,6 @@ final class DataBase {
             throw DatabaseError.polisFolder
         }
         let path = polisResources.observingDataFile(withID: locUUID, observingFacilityID: uuid)
-        print(path)
         let location = try jsonDecoder.decode(PolisObservingFacilityLocation.self, from: Utils.dataFromFilePath(path))
         return location
     }

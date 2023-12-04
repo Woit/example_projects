@@ -110,42 +110,35 @@ private final class HTTPHandler: ChannelInboundHandler {
                 }
 
             var msg = ""
-            switch api {
-            case .updateDate:
-                do {
+            do {
+                switch api {
+                case .updateDate:
                     msg = try db.getLastUpdateTime()
-                } catch let err as DatabaseError {
-                    serverError(channel: channel, reason: .internalError(err.rawValue))
-                    return
-                } catch {
-                    serverError(channel: channel, reason: .internalError("Unknown error"))
-                    return
-                }
 
-            case .numberOfObservingFacilities:
-                msg = (try? db.getNumFacilities()) ?? ""
+                case .numberOfObservingFacilities:
+                    msg = try db.getNumFacilities()
 
-            case .search:
-                guard let params, let name = params["name"] else {
-                    serverError(channel: channel, reason: .parameterRequired("name"))
-                    return
-                }
-                msg = (try? db.getByName(name: name)) ?? ""
+                case .search:
+                    guard let params, let name = params["name"] else {
+                        serverError(channel: channel, reason: .parameterRequired("name"))
+                        return
+                    }
+                    msg = try db.getByName(name: name)
 
-            case .location:
-                guard let params, let uuid = params["uuid"] else {
-                    serverError(channel: channel, reason: .parameterRequired("uuid"))
-                    return
-                }
-                do {
+                case .location:
+                    guard let params, let uuid = params["uuid"] else {
+                        serverError(channel: channel, reason: .parameterRequired("uuid"))
+                        return
+                    }
                     msg = try db.getLocationByUUID(UUID: uuid)
-                } catch let err as DatabaseError {
-                    serverError(channel: channel, reason: .internalError(err.rawValue))
-                    return
-                } catch {
-                    serverError(channel: channel, reason: .internalError("Unknown error"))
-                    return
                 }
+            } catch let err as DatabaseError {
+                serverError(channel: channel, reason: .internalError(err.rawValue))
+                return
+            } catch {
+                print(error)
+                serverError(channel: channel, reason: .internalError(error.localizedDescription))
+                return
             }
 
             var head = HTTPResponseHead(version: .http1_1, status: .ok)
@@ -197,7 +190,7 @@ private final class HTTPHandler: ChannelInboundHandler {
             #if DEBUG
                 buffer.writeString(msg)
             #else
-                buffer.writeString("Internal error")
+                buffer.writeString("Unknown error")
             #endif
         }
         let part = HTTPServerResponsePart.head(head)
