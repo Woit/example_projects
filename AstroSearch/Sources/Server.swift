@@ -6,7 +6,7 @@ enum ServerError {
     case forbidden
     case parameterRequired(String)
     case notReady
-    case internalError
+    case internalError(String?)
 }
 
 // - `updateDate` - returns the last update date of the data set
@@ -70,12 +70,19 @@ private final class HTTPHandler: ChannelInboundHandler {
     public func channelRead(context: ChannelHandlerContext, data: NIOAny) {
         let channel = context.channel
         guard let db = database else {
-            serverError(channel: channel, reason: .internalError)
+            serverError(channel: channel, reason: .internalError("Unknown error"))
             return
         }
-        if db.state != .ready {
+        switch db.state {
+        case .notReady:
             serverError(channel: channel, reason: .notReady)
             return
+
+        case let .initError(reason):
+            serverError(channel: channel, reason: .internalError(reason))
+
+        case .ready:
+            break
         }
 
         let request = unwrapInboundIn(data)
@@ -86,7 +93,7 @@ private final class HTTPHandler: ChannelInboundHandler {
                 return
             }
             guard let components = URLComponents(string: header.uri) else {
-                serverError(channel: channel, reason: .internalError)
+                serverError(channel: channel, reason: .internalError("Request parsin error with \(header.uri)"))
                 return
             }
             guard let api = Api(rawValue: components.path) else {
@@ -102,41 +109,54 @@ private final class HTTPHandler: ChannelInboundHandler {
                     return dict
                 }
 
-            var buffer: NIOCore.ByteBuffer
+            var msg = ""
             switch api {
             case .updateDate:
-                let msg = db.getLastUpdateTime()
-                buffer = channel.allocator.buffer(capacity: msg.count * 2)
-                buffer.writeString(msg)
+                do {
+                    msg = try db.getLastUpdateTime()
+                } catch let err as DatabaseError {
+                    serverError(channel: channel, reason: .internalError(err.rawValue))
+                    return
+                } catch {
+                    serverError(channel: channel, reason: .internalError("Unknown error"))
+                    return
+                }
 
             case .numberOfObservingFacilities:
-                let msg = db.getNumFascilities()
-                buffer = channel.allocator.buffer(capacity: msg.count * 2)
-                buffer.writeString(msg)
+                msg = (try? db.getNumFacilities()) ?? ""
 
             case .search:
                 guard let params, let name = params["name"] else {
                     serverError(channel: channel, reason: .parameterRequired("name"))
                     return
                 }
-                let msg = db.getByName(name: name)
-                buffer = channel.allocator.buffer(capacity: msg.count * 2)
-                buffer.writeString(msg)
+                msg = (try? db.getByName(name: name)) ?? ""
 
             case .location:
                 guard let params, let uuid = params["uuid"] else {
                     serverError(channel: channel, reason: .parameterRequired("uuid"))
                     return
                 }
-                let msg = db.getLocationByUUID(UUID: uuid)
-                buffer = channel.allocator.buffer(capacity: msg.count * 2)
-                buffer.writeString(msg)
+                do {
+                    msg = try db.getLocationByUUID(UUID: uuid)
+                } catch let err as DatabaseError {
+                    serverError(channel: channel, reason: .internalError(err.rawValue))
+                    return
+                } catch {
+                    serverError(channel: channel, reason: .internalError("Unknown error"))
+                    return
+                }
             }
 
-            let head = HTTPResponseHead(version: .http1_1, status: .ok)
+            var head = HTTPResponseHead(version: .http1_1, status: .ok)
+            head.headers.add(name: "Content-Type", value: "application/json")
+
             let part = HTTPServerResponsePart.head(head)
             _ = channel.write(part)
 
+            var buffer: NIOCore.ByteBuffer
+            buffer = channel.allocator.buffer(capacity: msg.count * 2)
+            buffer.writeString(msg)
             let bodypart = HTTPServerResponsePart.body(.byteBuffer(buffer))
             _ = channel.write(bodypart)
 
@@ -170,10 +190,15 @@ private final class HTTPHandler: ChannelInboundHandler {
             buffer = channel.allocator.buffer(capacity: 84)
             buffer.writeString("Service not yet ready (data downloading...)")
 
-        case .internalError:
+        case let .internalError(msg):
             head = HTTPResponseHead(version: .http1_1, status: .internalServerError)
             buffer = channel.allocator.buffer(capacity: 28)
-            buffer.writeString("Internal error")
+            let msg = msg ?? "Internal error"
+            #if DEBUG
+                buffer.writeString(msg)
+            #else
+                buffer.writeString("Internal error")
+            #endif
         }
         let part = HTTPServerResponsePart.head(head)
         _ = channel.write(part)
@@ -190,9 +215,4 @@ private final class HTTPHandler: ChannelInboundHandler {
     func channelReadComplete(context: ChannelHandlerContext) {
         context.flush()
     }
-}
-
-private struct APIRequest: Codable {
-    let api: Api
-    let params: [String: String]?
 }

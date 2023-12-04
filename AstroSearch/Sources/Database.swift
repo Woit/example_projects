@@ -5,6 +5,16 @@ import swift_polis
 enum DatabaseState {
     case notReady
     case ready
+    case initError(String)
+}
+
+enum DatabaseError: String, Error {
+    case version = "Init Polis version failed"
+    case polisFolder = "Init PolisFileResourceFinder failed"
+    case polisDirectory = "Parse PolisDirectory failed"
+    case polisFacilitiesDirectory = "Parse PolisFacilitiesDirectory failed"
+    case polisFacility = "Parse PolisFacility failed"
+    case dataEncodingError
 }
 
 final class DataBase {
@@ -15,58 +25,140 @@ final class DataBase {
 
     private var polisResources: PolisFileResourceFinder?
     private var polisDirectory: PolisDirectory?
-    private var polisFascilitiesDirectory: PolisObservingFacilityDirectory?
+    private var polisFacilitiesDirectory: PolisObservingFacilityDirectory?
 
     init(remotePath: String, localPath: String) {
         self.remotePath = remotePath
         self.localPath = localPath
         loader = RemoteDownloader(fromRemote: remotePath, toLocal: localPath)
         loader.downloadIfNeeded { [weak self] in
-            self?.setupData()
-            self?.state = .ready
+            do {
+                try self?.setupData()
+                self?.state = .ready
+            } catch let err as DatabaseError {
+                self?.state = .initError(err.rawValue)
+            } catch {
+                self?.state = .initError("Unknown error")
+            }
         }
     }
 
-    func getLastUpdateTime() -> String {
-        polisDirectory?.lastUpdate.formatted() ?? ""
+    func getLastUpdateTime() throws -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        guard
+            let date = polisDirectory?.lastUpdate,
+            let result = Utils.structToJsonStr(input: ["last_updated": formatter.string(from: date)])
+        else {
+            throw DatabaseError.dataEncodingError
+        }
+        return result
     }
 
-    func getNumFascilities() -> String {
-        "\(polisFascilitiesDirectory?.observingFacilityReferences.count ?? 0)"
+    func getNumFacilities() throws -> String {
+        guard
+            let num = polisFacilitiesDirectory?.observingFacilityReferences.count,
+            let result = Utils.structToJsonStr(input: ["number_of_fascilities": num])
+        else {
+            throw DatabaseError.dataEncodingError
+        }
+        return result
     }
 
-    func getByName(name: String) -> String {
-        if let item = polisFascilitiesDirectory?.observingFacilityReferences.first(where: { $0.identity.name == name }) {
-            return item.identity.id.uuidString
+    func getByName(name: String) throws -> String {
+        var result = [
+            "result": "ok",
+            "uuid": ""
+        ]
+
+        if let item = polisFacilitiesDirectory?.observingFacilityReferences.first(where: { $0.identity.name == name }) {
+            result["uuid"] = item.identity.id.uuidString
         } else {
-            return "empty"
+            result["result"] = "not_found"
+            result.removeValue(forKey: "uuid")
+        }
+
+        if let res = Utils.structToJsonStr(input: result) {
+            return res
+        } else {
+            throw DatabaseError.dataEncodingError
         }
     }
 
-    func getLocationByUUID(UUID: String) -> String {
-        "0.0, 0.0 -> \(UUID)"
+    func getLocationByUUID(UUID: String) throws -> String {
+        let fascility = try getFacilityByUUID(UUID)
+        guard
+            let locationUUID = fascility.facilityLocationID,
+            let location = try? getLocationByUUID(fascility.id.uuidString, locationUUID),
+            let result = Utils.structToJsonStr(input: [
+                "latitude": location.latitude?.value,
+                "longitude": location.eastLongitude?.value
+            ])
+        else {
+            throw DatabaseError.polisFacility
+        }
+        return result
     }
 
-    private func setupData() {
-        guard let ver = SemanticVersion(with: "0.2.0-alpha.1") else { return }
-        polisResources = try? PolisFileResourceFinder(
-            at: URL(filePath: localPath),
-            supportedImplementation: .init(
-                dataFormat: PolisImplementation.DataFormat.json,
-                apiSupport: PolisImplementation.APILevel.staticData,
-                version: ver
+    private func setupData() throws {
+        //
+        guard let ver = SemanticVersion(with: "0.2.0-alpha.1") else {
+            throw DatabaseError.version
+        }
+        do {
+            polisResources = try PolisFileResourceFinder(
+                at: URL(filePath: localPath),
+                supportedImplementation: .init(
+                    dataFormat: PolisImplementation.DataFormat.json,
+                    apiSupport: PolisImplementation.APILevel.staticData,
+                    version: ver
+                )
             )
-        )
+        } catch {
+            throw DatabaseError.polisFolder
+        }
 
-        guard let polisResources else { return }
+        //
         let jsonDecoder = PolisJSONDecoder()
-
-        if let data = try? Utils.dataFromFilePath(polisResources.polisProviderDirectoryFile()) {
-            polisDirectory = try? jsonDecoder.decode(PolisDirectory.self, from: data)
+        guard let polisResources = polisResources else {
+            throw DatabaseError.polisFolder
         }
 
-        if let data = try? Utils.dataFromFilePath(polisResources.observingFacilitiesDirectoryFile()) {
-            polisFascilitiesDirectory = try? jsonDecoder.decode(PolisObservingFacilityDirectory.self, from: data)
+        //
+        do {
+            let data = try Utils.dataFromFilePath(polisResources.polisProviderDirectoryFile())
+            polisDirectory = try jsonDecoder.decode(PolisDirectory.self, from: data)
+        } catch {
+            throw DatabaseError.polisDirectory
         }
+
+        //
+        do {
+            let data = try Utils.dataFromFilePath(polisResources.observingFacilitiesDirectoryFile())
+            polisFacilitiesDirectory = try jsonDecoder.decode(PolisObservingFacilityDirectory.self, from: data)
+        } catch {
+            throw DatabaseError.polisFacilitiesDirectory
+        }
+    }
+
+    private func getFacilityByUUID(_ uuid: String) throws -> PolisObservingFacility {
+        let jsonDecoder = PolisJSONDecoder()
+        guard let polisResources = polisResources else {
+            throw DatabaseError.polisFolder
+        }
+        let path = polisResources.observingFacilityFile(observingFacilityID: uuid)
+        let facility = try jsonDecoder.decode(PolisObservingFacility.self, from: Utils.dataFromFilePath(path))
+        return facility
+    }
+
+    private func getLocationByUUID(_ uuid: String, _ locUUID: UUID) throws -> PolisObservingFacilityLocation {
+        let jsonDecoder = PolisJSONDecoder()
+        guard let polisResources = polisResources else {
+            throw DatabaseError.polisFolder
+        }
+        let path = polisResources.observingDataFile(withID: locUUID, observingFacilityID: uuid)
+        print(path)
+        let location = try jsonDecoder.decode(PolisObservingFacilityLocation.self, from: Utils.dataFromFilePath(path))
+        return location
     }
 }

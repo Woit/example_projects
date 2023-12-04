@@ -81,7 +81,6 @@ disabled_rules:
   - implicit_getter
   - redundant_string_enum_value
   - switch_case_alignment
-  - trailing_newline
 
 # Enable rules not from the default set.
 opt_in_rules:

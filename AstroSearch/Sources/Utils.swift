@@ -44,4 +44,12 @@ enum Utils {
     static func dataFromFilePath(_ localFilePath: String) throws -> Data {
         try Data(contentsOf: URL(fileURLWithPath: localFilePath))
     }
+
+    static func structToJsonStr<A: Encodable>(input: A) -> String? {
+        guard let jsonData = try? JSONEncoder().encode(input), let jsonString = String(data: jsonData, encoding: .utf8)
+        else {
+            return nil
+        }
+        return jsonString
+    }
 }
