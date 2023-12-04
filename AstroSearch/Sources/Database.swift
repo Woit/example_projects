@@ -2,21 +2,33 @@ import Foundation
 import SoftwareEtudesUtilities
 import swift_polis
 
+/// Database  states influence that how server will operate
 enum DatabaseState {
+    /// notReady state will apply while service donwloading remote data
     case notReady
+    /// ready means that service ready for acces
     case ready
+    /// initError - this state will apply if some errors will appears during database initialization process
     case initError(String)
 }
 
+/// Database errors indicates places and types of errors which happens during Polis data accessing
 enum DatabaseError: String, Error {
+    /// This error appears during init Polis version
     case version = "Init Polis version failed"
+    /// Means that service can't init class which is operate with data folder (probably something wrong with paths)
     case polisFolder = "Init PolisFileResourceFinder failed"
+    /// Means Polis Directory wasn't initiated (probably JSON decoding error)
     case polisDirectory = "Parse PolisDirectory failed"
+    /// Means that Facilities Directory wasn't initiated (probably JSON decoding error)
     case polisFacilitiesDirectory = "Parse PolisFacilitiesDirectory failed"
+    /// Means that Facility wasn't initiated (probably JSON decoding error, or neede JSON file wasn't found in data directory)
     case polisFacility = "Parse PolisFacility failed"
+    /// Means that some result data can't be formatted as JSON-string
     case dataEncodingError
 }
 
+/// Class provides access to data from api methods
 final class DataBase {
     private(set) var state: DatabaseState = .notReady
     private let remotePath: String
@@ -27,6 +39,10 @@ final class DataBase {
     private var polisDirectory: PolisDirectory?
     private var polisFacilitiesDirectory: PolisObservingFacilityDirectory?
 
+    /// Database initialization
+    /// - Parameters:
+    ///   - remotePath: Polis data source url
+    ///   - localPath: Path where Polis data will be stored locally
     init(remotePath: String, localPath: String) {
         self.remotePath = remotePath
         self.localPath = localPath
@@ -43,6 +59,8 @@ final class DataBase {
         }
     }
 
+    /// Method for getting last update timestamp
+    /// - Returns: JSON string which contains timestamp
     func getLastUpdateTime() throws -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -55,6 +73,8 @@ final class DataBase {
         return result
     }
 
+    /// Method for getting total number of facilities
+    /// - Returns: JSON string which contains number of fafcilities
     func getNumFacilities() throws -> String {
         guard
             let num = polisFacilitiesDirectory?.observingFacilityReferences.count,
@@ -65,6 +85,10 @@ final class DataBase {
         return result
     }
 
+    /// Method for getting UUID's of facilities with given part of name
+    /// - Parameters:
+    ///    - name: Name or part of name (will be searching by substring) of facility
+    /// - Returns: JSON string which represent array of founded UUID's
     func getByName(name: String) throws -> String {
         let items = polisFacilitiesDirectory?.observingFacilityReferences
             .filter { $0.identity.name.lowercased().contains(name.lowercased()) }
@@ -77,6 +101,10 @@ final class DataBase {
         }
     }
 
+    /// Method for getting latitude/longitude for given facility
+    /// - Parameters:
+    ///   - UUID: UUID for given facility
+    /// - Returns: JSON string which contains latitude/longitude values
     func getLocationByUUID(UUID: String) throws -> String {
         let fascility = try getFacilityByUUID(UUID)
         guard
@@ -92,8 +120,9 @@ final class DataBase {
         return result
     }
 
+    // Internal init method
     private func setupData() throws {
-        //
+        // Init semantic version and resource finder
         guard let ver = SemanticVersion(with: "0.2.0-alpha.1") else {
             throw DatabaseError.version
         }
@@ -110,13 +139,13 @@ final class DataBase {
             throw DatabaseError.polisFolder
         }
 
-        //
+        // Init Polis JSON decoder and bind Polis resource finder locally
         let jsonDecoder = PolisJSONDecoder()
         guard let polisResources = polisResources else {
             throw DatabaseError.polisFolder
         }
 
-        //
+        // Init Polis directory
         do {
             let data = try Utils.dataFromFilePath(polisResources.polisProviderDirectoryFile())
             polisDirectory = try jsonDecoder.decode(PolisDirectory.self, from: data)
@@ -124,7 +153,7 @@ final class DataBase {
             throw DatabaseError.polisDirectory
         }
 
-        //
+        // Init Polis facility directory
         do {
             let data = try Utils.dataFromFilePath(polisResources.observingFacilitiesDirectoryFile())
             polisFacilitiesDirectory = try jsonDecoder.decode(PolisObservingFacilityDirectory.self, from: data)
@@ -133,6 +162,7 @@ final class DataBase {
         }
     }
 
+    // Getting facility object from local file
     private func getFacilityByUUID(_ uuid: String) throws -> PolisObservingFacility {
         let jsonDecoder = PolisJSONDecoder()
         guard let polisResources = polisResources else {
@@ -143,6 +173,7 @@ final class DataBase {
         return facility
     }
 
+    // Getting location object from local file
     private func getLocationByUUID(_ uuid: String, _ locUUID: UUID) throws -> PolisObservingFacilityLocation {
         let jsonDecoder = PolisJSONDecoder()
         guard let polisResources = polisResources else {

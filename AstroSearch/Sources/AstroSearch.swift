@@ -1,10 +1,18 @@
 import ArgumentParser
 import Foundation
 
+/// Server default port
 let DEFAULT_PORT = 8080
+
+/// Default path where service will store downloaded Polis data
 let DEFAULT_DATA_PATH = "."
+
+/// Default url where service will looking Polis data for downloading.
+/// Should comply format [some_url]/polis
 let DEFAULT_REMOTE_SOURCE = "http://test.polis.observer/polis"
 
+/// Service will run local server, download some remote Polis data
+/// and provide several http api methods to access data
 @main
 struct AstroSearch: ParsableCommand {
     static let configuration = CommandConfiguration(

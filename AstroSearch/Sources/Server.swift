@@ -2,35 +2,50 @@ import Foundation
 import NIO
 import NIOHTTP1
 
+/// Server errors
 enum ServerError {
+    /// This error will return every time, when user tries to access to server path which is not exists
     case forbidden
+    /// Error appears when request didn't contains needed parameters
     case parameterRequired(String)
+    /// Error appears when service is not yet ready (in data downloading process)
     case notReady
+    /// Wide error type which contains reason description
     case internalError(String?)
 }
 
-// - `updateDate` - returns the last update date of the data set
-// - `numberOfObservingFacilities` - returns the number of facilities in the current data set
-// - `search?name=xxx` - returns the UUIDs of all facilities with a name containing the search criteria.
-// - `location?uuid=UUID` - returns the longitude and latitude (as Double values) of a facility with a given UUID.
+/// Server available api
 private enum Api: String, CaseIterable, Codable {
+    /// `/updateDate` - returns the last update date of the data set
     case updateDate = "/api/updateDate"
+    /// `/numberOfObservingFacilities` - returns the number of facilities in the current data set
     case numberOfObservingFacilities = "/api/numberOfObservingFacilities"
+    /// `/search?name=[some_symbols]` - returns the UUIDs of all facilities with a name containing the search criteria.
     case search = "/api/search"
+    /// `location?uuid=[some_uuid]` - returns the longitude and latitude (as Double values) of a facility with a given UUID.
     case location = "/api/location"
 }
 
+/// Class implements server
 final class Server {
+    /// Server port
     let port: Int
+    /// Database reference
     let database: DataBase
     private var httpHandler: HTTPHandler
 
+    /// Method for getting UUID's of facilities with given part of name
+    /// - Parameters:
+    ///    - port: Port on whis server will operate
+    ///    - database: Reference to Database object
+    /// - Returns: Server instance
     init(port: Int, database: DataBase) {
         self.port = port
         self.database = database
         httpHandler = HTTPHandler(database: database)
     }
 
+    /// Just run it!
     func run() throws {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: System.coreCount)
 
@@ -57,6 +72,7 @@ final class Server {
     }
 }
 
+// Main server handler
 private final class HTTPHandler: ChannelInboundHandler {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
