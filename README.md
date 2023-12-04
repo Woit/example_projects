@@ -20,6 +20,17 @@ brew install xcodegen
 ## Task 2: Polis local server
 For build and check this command-line app you need navigate to folder `/AstroSearch` and run command
 ```bash
+swift build
+```
+There is several ways to run this command-line app, but probably easiest way is run
+```bash
+./.build/debug/astro-search start
+```
+It will run local server with default parameters on _**localhost:8080/api**_. 
+
+For more details run
+
+```bash
 ./.build/debug/astro-search help
 # or
 ./.build/debug/astro-search help start
